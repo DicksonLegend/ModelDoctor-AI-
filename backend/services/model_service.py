@@ -1,5 +1,5 @@
 """
-Model Service — load, save, list, and manage .pkl model files.
+Model Service — load, save, list, and manage .pkl / .joblib model files.
 """
 
 from __future__ import annotations
@@ -32,9 +32,15 @@ def _save_registry():
 
 
 def load_model_from_file(file_bytes: bytes):
-    """Load a scikit-learn model from uploaded .pkl bytes."""
+    """Load a scikit-learn model from uploaded .pkl or .joblib bytes."""
     import io
-    return joblib.load(io.BytesIO(file_bytes))
+    import pickle
+    buf = io.BytesIO(file_bytes)
+    try:
+        return joblib.load(buf)
+    except Exception:
+        buf.seek(0)
+        return pickle.load(buf)
 
 
 def save_model(model, version: str, metrics: dict, health_score: int):

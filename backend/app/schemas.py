@@ -3,7 +3,7 @@ Pydantic models for all API request / response validation.
 """
 
 from __future__ import annotations
-from typing import Optional
+from typing import Optional, Any
 from pydantic import BaseModel
 
 
@@ -14,8 +14,17 @@ class MetricsOut(BaseModel):
     precision: float
     recall: float
     f1_score: float
-    confusion_matrix: list[list[int]]
+    confusion_matrix: list = []
     train_accuracy: Optional[float] = None
+    # Extended metrics
+    macro_precision: Optional[float] = None
+    macro_recall: Optional[float] = None
+    macro_f1: Optional[float] = None
+    error_rate: Optional[float] = None
+    misclassified: Optional[int] = None
+    total_test_samples: Optional[int] = None
+    n_classes: Optional[int] = None
+    per_class: Optional[dict] = None
 
 
 class DiagnosisItem(BaseModel):

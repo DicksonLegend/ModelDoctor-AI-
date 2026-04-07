@@ -49,7 +49,6 @@ export default function AnalysisResults({ result, datasetFile, setAnalysisResult
       const res = await retrainModel(formData);
       setRetrainResult(res);
 
-      // Update the main analysis result with new version info
       setAnalysisResult(prev => ({
         ...prev,
         model_version: res.new_model_version,
@@ -66,6 +65,9 @@ export default function AnalysisResults({ result, datasetFile, setAnalysisResult
   if (retraining) {
     return <Loader text="🔄 Retraining model with improvements... Please wait." />;
   }
+
+  const pct = (v) => v != null ? (v * 100).toFixed(1) + '%' : 'N/A';
+  const val = (v) => v != null ? v : 'N/A';
 
   return (
     <div className="page-container" id="results-page">
@@ -95,7 +97,6 @@ export default function AnalysisResults({ result, datasetFile, setAnalysisResult
         />
         <div className="glass-card">
           <ConfusionMatrix matrix={metrics.confusion_matrix} />
-          {/* Class Distribution */}
           {class_distribution && Object.keys(class_distribution).length > 0 && (
             <div style={{ marginTop: 'var(--space-lg)' }}>
               <h4 style={{ marginBottom: 'var(--space-sm)', color: 'var(--text-secondary)' }}>
@@ -125,6 +126,101 @@ export default function AnalysisResults({ result, datasetFile, setAnalysisResult
         </div>
       </div>
 
+      {/* ───── Detailed Metrics Summary ───── */}
+      <motion.div
+        className="glass-card"
+        style={{ marginBottom: 'var(--space-xl)' }}
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3 }}
+        id="detailed-metrics"
+      >
+        <h3 style={{ marginBottom: 'var(--space-md)' }}>📊 Detailed Metrics Summary</h3>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-md)' }}>
+          {/* Core Metrics */}
+          <div className="metric-group">
+            <h4 style={{ color: 'var(--accent-cyan)', marginBottom: 'var(--space-sm)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Core Metrics
+            </h4>
+            <MetricRow label="Test Accuracy" value={pct(metrics.accuracy)} />
+            <MetricRow label="Train Accuracy" value={pct(metrics.train_accuracy)} />
+            <MetricRow label="Error Rate" value={pct(metrics.error_rate)} />
+            <MetricRow label="Misclassified" value={`${val(metrics.misclassified)} / ${val(metrics.total_test_samples)}`} />
+          </div>
+
+          {/* Weighted Metrics */}
+          <div className="metric-group">
+            <h4 style={{ color: 'var(--accent-purple)', marginBottom: 'var(--space-sm)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Weighted Average
+            </h4>
+            <MetricRow label="Precision" value={pct(metrics.precision)} />
+            <MetricRow label="Recall" value={pct(metrics.recall)} />
+            <MetricRow label="F1 Score" value={pct(metrics.f1_score)} />
+          </div>
+
+          {/* Macro Metrics */}
+          <div className="metric-group">
+            <h4 style={{ color: 'var(--accent-green)', marginBottom: 'var(--space-sm)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Macro Average
+            </h4>
+            <MetricRow label="Precision" value={pct(metrics.macro_precision)} />
+            <MetricRow label="Recall" value={pct(metrics.macro_recall)} />
+            <MetricRow label="F1 Score" value={pct(metrics.macro_f1)} />
+          </div>
+
+          {/* Dataset Info */}
+          <div className="metric-group">
+            <h4 style={{ color: 'var(--accent-orange)', marginBottom: 'var(--space-sm)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Dataset Info
+            </h4>
+            <MetricRow label="Classes" value={val(metrics.n_classes)} />
+            <MetricRow label="Test Samples" value={val(metrics.total_test_samples)} />
+            <MetricRow label="Generalization Gap"
+              value={metrics.train_accuracy != null && metrics.accuracy != null
+                ? pct(Math.abs(metrics.train_accuracy - metrics.accuracy))
+                : 'N/A'
+              }
+            />
+          </div>
+        </div>
+
+        {/* Per-Class Breakdown */}
+        {metrics.per_class && Object.keys(metrics.per_class).length > 0 && (
+          <div style={{ marginTop: 'var(--space-lg)' }}>
+            <h4 style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-sm)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Per-Class Breakdown
+            </h4>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{
+                width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem',
+              }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                    <th style={thStyle}>Class</th>
+                    <th style={thStyle}>Precision</th>
+                    <th style={thStyle}>Recall</th>
+                    <th style={thStyle}>F1 Score</th>
+                    <th style={thStyle}>Support</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(metrics.per_class).map(([cls, m]) => (
+                    <tr key={cls} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                      <td style={tdStyle}>{cls}</td>
+                      <td style={tdStyle}>{pct(m.precision)}</td>
+                      <td style={tdStyle}>{pct(m.recall)}</td>
+                      <td style={tdStyle}>{pct(m.f1_score)}</td>
+                      <td style={tdStyle}>{m.support}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </motion.div>
+
       {/* Retrain Result */}
       {retrainResult && (
         <motion.div
@@ -140,15 +236,16 @@ export default function AnalysisResults({ result, datasetFile, setAnalysisResult
 
           <div className="grid-4" style={{ marginBottom: 'var(--space-md)' }}>
             {['accuracy', 'precision', 'recall', 'f1_score'].map((key) => {
-              const delta = retrainResult.improvements[`${key === 'f1_score' ? 'f1' : key}_delta`]
-                ?? (retrainResult.new_metrics[key] - retrainResult.old_metrics[key]);
+              const newVal = retrainResult.new_metrics[key] || 0;
+              const oldVal = retrainResult.old_metrics[key] || 0;
+              const delta = newVal - oldVal;
               return (
                 <div key={key} style={{ textAlign: 'center' }}>
                   <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
                     {key.replace('_', ' ')}
                   </div>
                   <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>
-                    {(retrainResult.new_metrics[key] * 100).toFixed(1)}%
+                    {(newVal * 100).toFixed(1)}%
                   </div>
                   <div className={delta >= 0 ? 'improvement-positive' : 'improvement-negative'}>
                     {delta >= 0 ? '▲' : '▼'} {(Math.abs(delta) * 100).toFixed(1)}%
@@ -217,3 +314,28 @@ export default function AnalysisResults({ result, datasetFile, setAnalysisResult
     </div>
   );
 }
+
+/* ── Helper Components ── */
+
+function MetricRow({ label, value }) {
+  return (
+    <div style={{
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      padding: '0.35rem 0', borderBottom: '1px solid rgba(255,255,255,0.04)',
+      fontSize: '0.88rem',
+    }}>
+      <span style={{ color: 'var(--text-muted)' }}>{label}</span>
+      <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'monospace' }}>{value}</span>
+    </div>
+  );
+}
+
+const thStyle = {
+  textAlign: 'left', padding: '0.5rem 0.75rem',
+  color: 'var(--text-muted)', fontWeight: 500,
+};
+
+const tdStyle = {
+  padding: '0.5rem 0.75rem', color: 'var(--text-primary)',
+  fontFamily: 'monospace',
+};

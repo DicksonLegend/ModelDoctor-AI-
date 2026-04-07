@@ -23,7 +23,7 @@ export default function Dashboard({ setAnalysisResult, setDatasetFile }) {
       return;
     }
     if (mode === 'model' && !modelFile) {
-      setError('Please upload a model file (.pkl)');
+      setError('Please upload a model file (.pkl or .joblib)');
       return;
     }
     if (mode === 'metrics' && !metricsFile) {
@@ -94,12 +94,12 @@ export default function Dashboard({ setAnalysisResult, setDatasetFile }) {
       <div className="grid-2" style={{ marginBottom: 'var(--space-xl)' }}>
         {mode === 'model' ? (
           <FileUploader
-            label="Upload Model (.pkl)"
-            accept={{ 'application/octet-stream': ['.pkl'] }}
+            label="Upload Model (.pkl / .joblib)"
+            accept={{ 'application/octet-stream': ['.pkl', '.joblib'] }}
             file={modelFile}
             onFileSelect={setModelFile}
             icon="🤖"
-            hint="Scikit-learn model (.pkl file)"
+            hint="Scikit-learn model (.pkl or .joblib file)"
           />
         ) : (
           <FileUploader
