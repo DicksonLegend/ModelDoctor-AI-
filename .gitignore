@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+
+# Virtual environment
+backend/venv/
+
+# MLflow
+backend/mlruns/
+
+# Model & data files (large)
+backend/models/*.pkl
+backend/data/raw/*.csv
+backend/data/processed/*.csv
+backend/logs/*.jsonl
+
+# DVC cache
+backend/.dvc/cache/
+backend/.dvc/tmp/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
