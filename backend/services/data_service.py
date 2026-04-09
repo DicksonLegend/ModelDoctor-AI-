@@ -40,9 +40,31 @@ def auto_detect_target(df: pd.DataFrame) -> str:
     return df.columns[-1]
 
 
+def infer_task_type_from_target(series: pd.Series) -> str:
+    """Infer whether the target is classification or regression."""
+    clean = series.dropna()
+    n = len(clean)
+    if n == 0:
+        return "classification"
+
+    # Non-numeric targets are classification labels.
+    if not pd.api.types.is_numeric_dtype(clean):
+        return "classification"
+
+    unique = clean.nunique()
+    unique_ratio = unique / max(n, 1)
+
+    # Heuristic: numeric with high cardinality is likely regression.
+    if unique > 50 and unique_ratio > 0.10:
+        return "regression"
+
+    return "classification"
+
+
 def preprocess(
     df: pd.DataFrame,
     target_col: str,
+    task_type: str = "classification",
 ) -> tuple:
     """
     Preprocess the dataset:
@@ -94,8 +116,8 @@ def preprocess(
             le = LabelEncoder()
             X_df[col] = le.fit_transform(X_df[col].astype(str))
 
-    # Encode target if categorical
-    if y_series.dtype == object or y_series.dtype.name == "category":
+    # Encode target only for classification.
+    if task_type == "classification" and (y_series.dtype == object or y_series.dtype.name == "category"):
         le = LabelEncoder()
         y_series = pd.Series(le.fit_transform(y_series.astype(str)), name=target_col)
 
@@ -107,12 +129,18 @@ def preprocess(
     X = X_df.values.astype(np.float64)
     y = y_series.values
 
-    # Make sure y is integer for classification
-    try:
-        y = y.astype(np.int64)
-    except (ValueError, TypeError):
-        le = LabelEncoder()
-        y = le.fit_transform(y.astype(str))
+    if task_type == "classification":
+        # Make sure y is integer labels for classification.
+        try:
+            y = y.astype(np.int64)
+        except (ValueError, TypeError):
+            le = LabelEncoder()
+            y = le.fit_transform(y.astype(str))
+    else:
+        # Regression target should stay numeric continuous.
+        y = pd.to_numeric(y, errors="coerce")
+        y = np.nan_to_num(y, nan=float(np.nanmedian(y)))
+        y = y.astype(np.float64)
 
     # Rebuild processed DataFrame for diagnosis
     processed_df = X_df.copy()
@@ -126,19 +154,60 @@ def split_data(
     y: np.ndarray,
     test_size: float = 0.2,
     random_state: int = 42,
+    stratify: bool = True,
 ) -> tuple:
     """
     Split data into train/test sets.
     Deterministic — always uses random_state=42.
     Handles stratify failures gracefully.
     """
-    try:
-        # Try stratified split first
-        return train_test_split(
-            X, y, test_size=test_size, random_state=random_state, stratify=y
+    if stratify:
+        try:
+            # Try stratified split first for classification.
+            return train_test_split(
+                X, y, test_size=test_size, random_state=random_state, stratify=y
+            )
+        except ValueError:
+            # Stratify fails when a class has too few samples.
+            pass
+
+    return train_test_split(
+        X, y, test_size=test_size, random_state=random_state
+    )
+
+
+def ensure_classification_target(y: np.ndarray) -> None:
+    """
+    Validate target suitability for classification pipeline.
+
+    Raises ValueError when target cardinality suggests a regression/continuous
+    problem, which this backend does not support yet.
+    """
+    y = np.asarray(y)
+    n_samples = len(y)
+    if n_samples == 0:
+        raise ValueError("Empty target column. Please provide a valid dataset.")
+
+    unique_vals, counts = np.unique(y, return_counts=True)
+    n_classes = len(unique_vals)
+
+    if n_classes < 2:
+        raise ValueError(
+            "Target has only one class. Classification requires at least two classes."
         )
-    except ValueError:
-        # Stratify fails when a class has too few samples
-        return train_test_split(
-            X, y, test_size=test_size, random_state=random_state
+
+    # Guard against continuous/high-cardinality labels (common in regression datasets).
+    max_allowed_classes = min(120, max(20, int(n_samples * 0.2)))
+    if n_classes > max_allowed_classes:
+        raise ValueError(
+            "Detected too many unique target values "
+            f"({n_classes} classes over {n_samples} rows). "
+            "This dataset appears to be regression/continuous. "
+            "Current pipeline supports classification targets only."
+        )
+
+    if counts.min() <= 1 and n_classes > 30:
+        raise ValueError(
+            "Target has many singleton classes, which indicates non-classification labels. "
+            "Please provide a categorical/class label target column."
         )

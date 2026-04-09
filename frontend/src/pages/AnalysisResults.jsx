@@ -30,7 +30,17 @@ export default function AnalysisResults({ result, datasetFile, setAnalysisResult
     );
   }
 
-  const { metrics, diagnosis, suggestions, health_score, model_version, class_distribution } = result;
+  const {
+    task_type,
+    metrics,
+    diagnosis,
+    suggestions,
+    health_score,
+    model_version,
+    class_distribution,
+    plain_language_summary,
+    metrics_source,
+  } = result;
 
   const handleRetrain = async () => {
     if (!datasetFile) {
@@ -51,9 +61,12 @@ export default function AnalysisResults({ result, datasetFile, setAnalysisResult
 
       setAnalysisResult(prev => ({
         ...prev,
+        task_type: res.task_type || prev?.task_type,
         model_version: res.new_model_version,
         metrics: res.new_metrics,
         health_score: res.new_health_score,
+        plain_language_summary: res.plain_language_summary || prev?.plain_language_summary,
+        metrics_source: res.metrics_source || prev?.metrics_source,
       }));
     } catch (err) {
       setError(err.response?.data?.detail || 'Retraining failed');
@@ -68,6 +81,21 @@ export default function AnalysisResults({ result, datasetFile, setAnalysisResult
 
   const pct = (v) => v != null ? (v * 100).toFixed(1) + '%' : 'N/A';
   const val = (v) => v != null ? v : 'N/A';
+  const isRegression = task_type === 'regression';
+
+  const summaryMetrics = isRegression
+    ? [
+      { label: 'R2 Score', value: metrics.r2_score, suffix: '' },
+      { label: 'RMSE', value: metrics.rmse, suffix: '' },
+      { label: 'MAE', value: metrics.mae, suffix: '' },
+      { label: 'Explained Var', value: metrics.explained_variance, suffix: '' },
+    ]
+    : [
+      { label: 'Accuracy', value: metrics.accuracy, suffix: '' },
+      { label: 'Precision', value: metrics.precision, suffix: '' },
+      { label: 'Recall', value: metrics.recall, suffix: '' },
+      { label: 'F1 Score', value: metrics.f1_score, suffix: '' },
+    ];
 
   return (
     <div className="page-container" id="results-page">
@@ -77,15 +105,15 @@ export default function AnalysisResults({ result, datasetFile, setAnalysisResult
         animate={{ opacity: 1, y: 0 }}
       >
         <h1>📋 Analysis Results</h1>
+        <p style={{ color: 'var(--text-secondary)' }}>Task Type: <strong>{isRegression ? 'Regression' : 'Classification'}</strong></p>
         <p>Model Version: <strong style={{ color: 'var(--accent-purple)' }}>{model_version}</strong></p>
       </motion.div>
 
       {/* Metrics Grid */}
       <div className="grid-4" style={{ marginBottom: 'var(--space-xl)' }}>
-        <MetricsCard label="Accuracy" value={metrics.accuracy} delay={0} />
-        <MetricsCard label="Precision" value={metrics.precision} delay={0.1} />
-        <MetricsCard label="Recall" value={metrics.recall} delay={0.2} />
-        <MetricsCard label="F1 Score" value={metrics.f1_score} delay={0.3} />
+        {summaryMetrics.map((m, idx) => (
+          <MetricsCard key={m.label} label={m.label} value={m.value} suffix={m.suffix} delay={idx * 0.1} />
+        ))}
       </div>
 
       {/* Health Gauge + Confusion Matrix */}
@@ -96,7 +124,15 @@ export default function AnalysisResults({ result, datasetFile, setAnalysisResult
           breakdown={health_score.breakdown}
         />
         <div className="glass-card">
-          <ConfusionMatrix matrix={metrics.confusion_matrix} />
+          {!isRegression && <ConfusionMatrix matrix={metrics.confusion_matrix} />}
+          {isRegression && (
+            <div style={{ textAlign: 'center', padding: 'var(--space-lg)' }}>
+              <h3 style={{ marginBottom: 'var(--space-md)' }}>📉 Regression Error Summary</h3>
+              <p style={{ color: 'var(--text-secondary)' }}>
+                RMSE: <strong>{val(metrics.rmse)}</strong> · MAE: <strong>{val(metrics.mae)}</strong> · R2: <strong>{val(metrics.r2_score)}</strong>
+              </p>
+            </div>
+          )}
           {class_distribution && Object.keys(class_distribution).length > 0 && (
             <div style={{ marginTop: 'var(--space-lg)' }}>
               <h4 style={{ marginBottom: 'var(--space-sm)', color: 'var(--text-secondary)' }}>
@@ -126,6 +162,38 @@ export default function AnalysisResults({ result, datasetFile, setAnalysisResult
         </div>
       </div>
 
+      {/* Plain-language explanation */}
+      {plain_language_summary && (
+        <motion.div
+          className="glass-card"
+          style={{ marginBottom: 'var(--space-xl)' }}
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.25 }}
+          id="plain-language-summary"
+        >
+          <h3 style={{ marginBottom: 'var(--space-sm)' }}>🧠 Easy Explanation (AI Assisted)</h3>
+          <p style={{
+            color: 'var(--text-secondary)',
+            lineHeight: 1.8,
+            whiteSpace: 'pre-line',
+            marginBottom: 'var(--space-md)',
+          }}>
+            {plain_language_summary}
+          </p>
+          <div style={{
+            fontSize: '0.82rem',
+            color: 'var(--text-muted)',
+            borderTop: '1px solid rgba(255,255,255,0.08)',
+            paddingTop: 'var(--space-sm)',
+          }}>
+            Metrics Source: {metrics_source === 'model_evaluation_code'
+              ? 'Computed by backend evaluation code (scikit-learn), not generated by Gemini.'
+              : metrics_source || 'Computed by backend evaluation code.'}
+          </div>
+        </motion.div>
+      )}
+
       {/* ───── Detailed Metrics Summary ───── */}
       <motion.div
         className="glass-card"
@@ -138,6 +206,36 @@ export default function AnalysisResults({ result, datasetFile, setAnalysisResult
         <h3 style={{ marginBottom: 'var(--space-md)' }}>📊 Detailed Metrics Summary</h3>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-md)' }}>
+          {isRegression ? (
+            <>
+              <div className="metric-group">
+                <h4 style={{ color: 'var(--accent-cyan)', marginBottom: 'var(--space-sm)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Regression Metrics
+                </h4>
+                <MetricRow label="R2 Score" value={val(metrics.r2_score)} />
+                <MetricRow label="Train R2" value={val(metrics.train_accuracy)} />
+                <MetricRow label="Explained Variance" value={val(metrics.explained_variance)} />
+              </div>
+
+              <div className="metric-group">
+                <h4 style={{ color: 'var(--accent-purple)', marginBottom: 'var(--space-sm)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Error Metrics
+                </h4>
+                <MetricRow label="MAE" value={val(metrics.mae)} />
+                <MetricRow label="MSE" value={val(metrics.mse)} />
+                <MetricRow label="RMSE" value={val(metrics.rmse)} />
+              </div>
+
+              <div className="metric-group">
+                <h4 style={{ color: 'var(--accent-green)', marginBottom: 'var(--space-sm)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Dataset Info
+                </h4>
+                <MetricRow label="Test Samples" value={val(metrics.total_test_samples)} />
+                <MetricRow label="Features" value={val(metrics.n_classes)} />
+              </div>
+            </>
+          ) : (
+            <>
           {/* Core Metrics */}
           <div className="metric-group">
             <h4 style={{ color: 'var(--accent-cyan)', marginBottom: 'var(--space-sm)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -183,10 +281,12 @@ export default function AnalysisResults({ result, datasetFile, setAnalysisResult
               }
             />
           </div>
+            </>
+          )}
         </div>
 
         {/* Per-Class Breakdown */}
-        {metrics.per_class && Object.keys(metrics.per_class).length > 0 && (
+        {!isRegression && metrics.per_class && Object.keys(metrics.per_class).length > 0 && (
           <div style={{ marginTop: 'var(--space-lg)' }}>
             <h4 style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-sm)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               Per-Class Breakdown
@@ -235,7 +335,7 @@ export default function AnalysisResults({ result, datasetFile, setAnalysisResult
           </h3>
 
           <div className="grid-4" style={{ marginBottom: 'var(--space-md)' }}>
-            {['accuracy', 'precision', 'recall', 'f1_score'].map((key) => {
+            {(isRegression ? ['r2_score', 'rmse', 'mae'] : ['accuracy', 'precision', 'recall', 'f1_score']).map((key) => {
               const newVal = retrainResult.new_metrics[key] || 0;
               const oldVal = retrainResult.old_metrics[key] || 0;
               const delta = newVal - oldVal;
@@ -245,7 +345,7 @@ export default function AnalysisResults({ result, datasetFile, setAnalysisResult
                     {key.replace('_', ' ')}
                   </div>
                   <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>
-                    {(newVal * 100).toFixed(1)}%
+                    {isRegression ? Number(newVal).toFixed(4) : `${(newVal * 100).toFixed(1)}%`}
                   </div>
                   <div className={delta >= 0 ? 'improvement-positive' : 'improvement-negative'}>
                     {delta >= 0 ? '▲' : '▼'} {(Math.abs(delta) * 100).toFixed(1)}%

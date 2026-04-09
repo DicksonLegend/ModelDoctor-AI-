@@ -10,10 +10,10 @@ from pydantic import BaseModel
 # ── Shared / Reusable ──────────────────────────────────────────────────
 
 class MetricsOut(BaseModel):
-    accuracy: float
-    precision: float
-    recall: float
-    f1_score: float
+    accuracy: Optional[float] = None
+    precision: Optional[float] = None
+    recall: Optional[float] = None
+    f1_score: Optional[float] = None
     confusion_matrix: list = []
     train_accuracy: Optional[float] = None
     # Extended metrics
@@ -25,6 +25,13 @@ class MetricsOut(BaseModel):
     total_test_samples: Optional[int] = None
     n_classes: Optional[int] = None
     per_class: Optional[dict] = None
+    # Regression metrics
+    mae: Optional[float] = None
+    mse: Optional[float] = None
+    rmse: Optional[float] = None
+    r2_score: Optional[float] = None
+    explained_variance: Optional[float] = None
+    task_type: Optional[str] = None
 
 
 class DiagnosisItem(BaseModel):
@@ -49,11 +56,14 @@ class HealthScoreOut(BaseModel):
 
 class AnalyzeResponse(BaseModel):
     model_version: str
+    task_type: str = "classification"
     metrics: MetricsOut
     diagnosis: list[DiagnosisItem]
     suggestions: list[SuggestionItem]
     health_score: HealthScoreOut
     class_distribution: Optional[dict] = None
+    plain_language_summary: Optional[str] = None
+    metrics_source: str = "model_evaluation_code"
 
 
 # ── /retrain ───────────────────────────────────────────────────────────
@@ -65,10 +75,13 @@ class RetrainRequest(BaseModel):
 
 class RetrainResponse(BaseModel):
     new_model_version: str
+    task_type: str = "classification"
     old_metrics: MetricsOut
     new_metrics: MetricsOut
     improvements: dict
     new_health_score: HealthScoreOut
+    plain_language_summary: Optional[str] = None
+    metrics_source: str = "model_evaluation_code"
 
 
 # ── /predict ───────────────────────────────────────────────────────────

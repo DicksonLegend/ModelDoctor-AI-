@@ -9,13 +9,16 @@ import numpy as np
 import pandas as pd
 
 
-def diagnose(metrics: dict, df: pd.DataFrame, target_col: str) -> list[dict]:
+def diagnose(metrics: dict, df: pd.DataFrame, target_col: str, task_type: str = "classification") -> list[dict]:
     """
     Analyze metrics + dataset and return a list of diagnosed problems.
 
     Each item: { "problem": str, "severity": str, "reason": str }
     """
     problems = []
+
+    if task_type == "regression":
+        return _diagnose_regression(metrics, df)
 
     # ── 1. Overfitting / Underfitting ─────────────────────────────────
     test_acc = metrics.get("accuracy", 0)
@@ -161,6 +164,70 @@ def diagnose(metrics: dict, df: pd.DataFrame, target_col: str) -> list[dict]:
             "problem": "No Major Issues Detected",
             "severity": "low",
             "reason": "The model and data appear to be in good shape.",
+        })
+
+    return problems
+
+
+def _diagnose_regression(metrics: dict, df: pd.DataFrame) -> list[dict]:
+    """Regression-focused diagnosis."""
+    problems = []
+    r2 = metrics.get("r2_score", 0.0) or 0.0
+    train_r2 = metrics.get("train_accuracy")
+    rmse = metrics.get("rmse", 0.0) or 0.0
+
+    if train_r2 is not None:
+        gap = float(train_r2) - float(r2)
+        if gap > 0.20:
+            problems.append({
+                "problem": "Overfitting",
+                "severity": "high",
+                "reason": f"Train R2 ({train_r2:.3f}) is much higher than test R2 ({r2:.3f}), suggesting overfitting.",
+            })
+        elif gap > 0.10:
+            problems.append({
+                "problem": "Mild Overfitting",
+                "severity": "medium",
+                "reason": f"Train-test R2 gap is {gap:.3f}, indicating limited generalization.",
+            })
+
+    if r2 < 0.2:
+        problems.append({
+            "problem": "Underfitting",
+            "severity": "high",
+            "reason": f"Test R2 is {r2:.3f}, so the model explains little target variance.",
+        })
+    elif r2 < 0.5:
+        problems.append({
+            "problem": "Low Explained Variance",
+            "severity": "medium",
+            "reason": f"Test R2 of {r2:.3f} is low for production-quality regression.",
+        })
+
+    target_std = float(df.iloc[:, -1].std()) if len(df.columns) > 0 else 0.0
+    if target_std > 0 and rmse > target_std:
+        problems.append({
+            "problem": "High Prediction Error",
+            "severity": "high",
+            "reason": f"RMSE ({rmse:.3f}) is higher than target spread ({target_std:.3f}), indicating large prediction errors.",
+        })
+
+    # Shared data quality checks
+    missing_pct = (df.isnull().sum() / len(df) * 100)
+    high_missing = missing_pct[missing_pct > 20]
+    if len(high_missing) > 0:
+        cols = ", ".join(high_missing.index.tolist()[:5])
+        problems.append({
+            "problem": "High Missing Values",
+            "severity": "medium",
+            "reason": f"Columns with >20% missing data: {cols}.",
+        })
+
+    if not problems:
+        problems.append({
+            "problem": "No Major Issues Detected",
+            "severity": "low",
+            "reason": "Regression model and data appear to be in good shape.",
         })
 
     return problems

@@ -45,6 +45,22 @@ RULES = {
             "like SelectKBest can help identify the most informative features."
         ),
     },
+    "Low Explained Variance": {
+        "action": "Improve regression feature set",
+        "explanation": (
+            "Add stronger predictive features, remove noisy columns, and test "
+            "non-linear regressors. Low explained variance means the model is "
+            "not capturing enough target behavior."
+        ),
+    },
+    "High Prediction Error": {
+        "action": "Reduce error with robust regression tuning",
+        "explanation": (
+            "Tune tree depth/estimators or regularization strength, and check "
+            "for outliers in the target. Also compare MAE and RMSE to understand "
+            "average versus large-error behavior."
+        ),
+    },
     "Severe Class Imbalance": {
         "action": "Apply SMOTE and class weights",
         "explanation": (
@@ -188,6 +204,82 @@ async def enhance_with_ai(diagnosis: list, suggestions: list) -> list:
         return suggestions
 
 
+async def build_plain_language_summary(
+    metrics: dict,
+    diagnosis: list,
+    suggestions: list,
+    health: dict,
+    class_distribution: dict | None = None,
+) -> str:
+    """
+    Build a detailed, non-technical explanation for end users.
+    The summary never changes metric values; it only explains them.
+    """
+    fallback = _build_plain_language_fallback(
+        metrics, diagnosis, suggestions, health, class_distribution
+    )
+
+    if not GEMINI_API_KEY or GEMINI_API_KEY == "your_gemini_api_key_here":
+        return fallback
+
+    try:
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+        )
+
+        prompt = (
+            "You are writing an easy-to-understand ML report for a non-technical user. "
+            "Use ONLY the numbers given below exactly as-is. Do not create new metrics, "
+            "do not change values, and do not contradict the diagnosis. "
+            "Write 3 short sections with clear headings: "
+            "1) What this score means, 2) What is going wrong, 3) What to do next. "
+            "Keep language simple and practical. Avoid jargon.\n\n"
+            "Health score:\n"
+            f"- score: {health.get('score')}\n"
+            f"- status: {health.get('status')}\n"
+            f"- breakdown: {json.dumps(health.get('breakdown', {}))}\n\n"
+            "Metrics:\n"
+            f"{json.dumps(metrics, indent=2)}\n\n"
+            "Diagnosis:\n"
+            f"{json.dumps(diagnosis, indent=2)}\n\n"
+            "Suggestions:\n"
+            f"{json.dumps(suggestions, indent=2)}\n\n"
+            "Class distribution:\n"
+            f"{json.dumps(class_distribution or {}, indent=2)}\n"
+        )
+
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(
+                url,
+                headers={"Content-Type": "application/json"},
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "temperature": 0.2,
+                        "maxOutputTokens": 900,
+                    },
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        candidates = data.get("candidates", [])
+        if not candidates:
+            return fallback
+
+        content = candidates[0].get("content", {})
+        parts = content.get("parts", [])
+        if not parts:
+            return fallback
+
+        text = (parts[0].get("text") or "").strip()
+        return text if text else fallback
+    except Exception as e:
+        print(f"Gemini summary error: {e}")
+        return fallback
+
+
 def _build_prompt(diagnosis: list, suggestions: list) -> str:
     """Build a structured prompt for Gemini."""
     prompt = (
@@ -205,6 +297,78 @@ def _build_prompt(diagnosis: list, suggestions: list) -> str:
     prompt += json.dumps(suggestions, indent=2)
 
     return prompt
+
+
+def _build_plain_language_fallback(
+    metrics: dict,
+    diagnosis: list,
+    suggestions: list,
+    health: dict,
+    class_distribution: dict | None,
+) -> str:
+    """Deterministic plain-language explanation when AI is unavailable."""
+    task_type = metrics.get("task_type", "classification")
+    acc = float(metrics.get("accuracy", 0.0)) * 100
+    f1 = float(metrics.get("f1_score", 0.0)) * 100
+    r2 = metrics.get("r2_score")
+    rmse = metrics.get("rmse")
+    train_acc = metrics.get("train_accuracy")
+    gap = None
+    if train_acc is not None:
+        gap = abs(float(train_acc) - float(metrics.get("accuracy", 0.0))) * 100
+
+    top_issue = diagnosis[0]["problem"] if diagnosis else "No major issues detected"
+    top_reason = diagnosis[0]["reason"] if diagnosis else "The model is in acceptable condition."
+
+    next_step = (
+        f"Start with: {suggestions[0]['action']}"
+        if suggestions else
+        "Start by collecting more representative training data."
+    )
+
+    class_note = ""
+    if class_distribution:
+        try:
+            counts = sorted(class_distribution.values())
+            if counts and counts[0] > 0:
+                ratio = round(counts[-1] / counts[0], 2)
+                class_note = (
+                    f"Class balance is uneven (largest class is about {ratio}x the smallest), "
+                    "which can make the model unfair across categories."
+                )
+        except Exception:
+            class_note = ""
+
+    summary = [
+        "### What this score means",
+        (
+            f"Your model health score is {health.get('score', 'N/A')} ({health.get('status', 'N/A')}). "
+            f"On this test, accuracy is {acc:.1f}% and F1 score is {f1:.1f}%."
+            if task_type != "regression"
+            else f"Your model health score is {health.get('score', 'N/A')} ({health.get('status', 'N/A')}). "
+                 f"On this test, R2 score is {r2 if r2 is not None else 'N/A'} and RMSE is {rmse if rmse is not None else 'N/A'}."
+        ),
+        "",
+        "### What is going wrong",
+        top_reason,
+    ]
+
+    if gap is not None:
+        summary.append(
+            f"The gap between train and test performance is {gap:.1f}%, which indicates how well the model generalizes."
+        )
+    if class_note:
+        summary.append(class_note)
+
+    summary.extend([
+        "",
+        "### What to do next",
+        f"Main issue detected: {top_issue}. {next_step}",
+        "After retraining, compare health score and F1 score together, not accuracy alone.",
+        "All metric values above are computed directly by the evaluation code, not generated by AI.",
+    ])
+
+    return "\n".join(summary)
 
 
 def _parse_gemini_json(ai_text: str, fallback: list) -> list:

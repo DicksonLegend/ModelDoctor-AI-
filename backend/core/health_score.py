@@ -13,6 +13,7 @@ def calculate_health_score(
     df: pd.DataFrame,
     target_col: str,
     cv_scores: list[float] | None = None,
+    task_type: str = "classification",
 ) -> dict:
     """
     Calculate an overall health score (0-100) for the model.
@@ -25,6 +26,9 @@ def calculate_health_score(
       - Stability (CV):      10%
     """
     breakdown = {}
+
+    if task_type == "regression":
+        return _calculate_regression_health(metrics, df, cv_scores)
 
     # ── 1. Accuracy Score (30%) ──────────────────────────────────────
     acc = metrics.get("accuracy", 0)
@@ -86,6 +90,70 @@ def calculate_health_score(
     final_score = round(min(max(final_score, 0), 100))
 
     # Status label
+    if final_score >= 85:
+        status = "Excellent"
+    elif final_score >= 70:
+        status = "Good"
+    elif final_score >= 50:
+        status = "Needs Tuning"
+    else:
+        status = "Poor"
+
+    return {
+        "score": final_score,
+        "status": status,
+        "breakdown": breakdown,
+    }
+
+
+def _calculate_regression_health(metrics: dict, df: pd.DataFrame, cv_scores: list[float] | None = None) -> dict:
+    """Health score for regression models."""
+    breakdown = {}
+
+    r2 = float(metrics.get("r2_score", 0.0) or 0.0)
+    r2_score = max(0.0, min(100.0, ((r2 + 1.0) / 2.0) * 100.0))
+    breakdown["fit_quality"] = round(r2_score)
+
+    train_r2 = metrics.get("train_accuracy")
+    if train_r2 is not None:
+        gap = abs(float(train_r2) - r2)
+        gen_score = max(0.0, 100.0 - min(1.0, gap / 0.4) * 100.0)
+    else:
+        gen_score = 70.0
+    breakdown["generalization"] = round(gen_score)
+
+    total_cells = df.shape[0] * df.shape[1]
+    missing_cells = df.isnull().sum().sum()
+    missing_ratio = missing_cells / max(total_cells, 1)
+    quality_score = max(0.0, 100.0 - (missing_ratio * 200.0))
+    breakdown["data_quality"] = round(quality_score)
+
+    rmse = float(metrics.get("rmse", 0.0) or 0.0)
+    target_std = float(df.iloc[:, -1].std()) if len(df.columns) > 0 else 0.0
+    if target_std > 0:
+        rel_err = rmse / target_std
+        error_score = max(0.0, 100.0 - min(2.0, rel_err) * 50.0)
+    else:
+        error_score = 70.0
+    breakdown["error_quality"] = round(error_score)
+
+    if cv_scores and len(cv_scores) > 1:
+        cv_std = np.std(cv_scores)
+        stability_score = max(0.0, 100.0 - min(0.2, cv_std) * 500.0)
+    else:
+        stability_score = 70.0
+    breakdown["stability"] = round(stability_score)
+
+    weights = {
+        "fit_quality": 0.35,
+        "generalization": 0.25,
+        "data_quality": 0.20,
+        "error_quality": 0.10,
+        "stability": 0.10,
+    }
+    final_score = sum(breakdown[k] * weights[k] for k in weights)
+    final_score = round(min(max(final_score, 0), 100))
+
     if final_score >= 85:
         status = "Excellent"
     elif final_score >= 70:
