@@ -1,102 +1,204 @@
-# 🩺 ModelDoctor AI+
+﻿# ModelDoctor AI+
 
-> **Production-level MLOps workflow** for ML model diagnosis, retraining, comparison, and deployment.
+Production-focused MLOps project for model diagnosis, retraining, version comparison, and operational tracking.
 
-[![CI/CD](https://github.com/your-repo/modeldoctor/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/your-repo/modeldoctor/actions)
+This project provides:
+- FastAPI backend for analysis and retraining workflows
+- React frontend for upload, diagnostics, comparisons, and monitoring views
+- MLflow tracking for experiment metadata and metrics
+- DVC integration hooks for dataset versioning
+- Dockerized deployment for backend, frontend, and MLflow
 
 ---
 
-## ✨ Features
+## 1. What This Project Does
 
-| Feature | Description |
-|---------|-------------|
-| 🔍 **Smart Diagnosis** | Detects overfitting, underfitting, class imbalance, missing data, scaling issues |
-| 💡 **AI Suggestions** | Rule-based + optional AI-powered improvement recommendations |
-| ⭐ **Health Score** | Comprehensive 0–100 model health assessment with 5-factor breakdown |
-| 🔄 **Auto Retrain** | One-click retraining with automatic improvement application |
-| 📊 **Version Compare** | Side-by-side model version comparison with charts |
-| ⬇️ **Model Download** | Download the best performing model as `.pkl` |
-| 📡 **Monitoring** | Track predictions, errors, and performance over time |
-| 🧪 **MLflow Tracking** | Full experiment tracking with metrics, params, and model artifacts |
-| 📦 **DVC Integration** | Dataset versioning with DVC |
+ModelDoctor helps you evaluate and improve machine learning models through a guided pipeline:
 
-## 🏗️ Architecture
+1. Upload model + dataset, or metrics + dataset
+2. Evaluate performance (classification and regression supported)
+3. Diagnose common ML issues (overfitting, imbalance, missing data, etc.)
+4. Generate actionable suggestions (rule-based, optional Gemini enhancement)
+5. Compute model health score (0-100) with factor breakdown
+6. Retrain with targeted hyperparameter strategies
+7. Save model versions and compare them over time
+8. Track runs in MLflow and write operational logs
 
+---
+
+## 2. Architecture Overview
+
+### 2.1 High-level flow
+
+```text
+Client (React)
+  -> FastAPI (/analyze, /retrain, /predict, /models, /download_model)
+    -> Core evaluation + diagnosis + health scoring + retraining
+    -> Model registry on disk (models/_registry.json)
+    -> Logs (jsonl files under backend/logs)
+    -> MLflow tracking (backend/mlruns)
+    -> DVC dataset add hook (if dvc installed)
 ```
-User uploads (model + data OR metrics + data)
-  → System evaluates model
-  → Diagnoses issues
-  → Gives suggestions (rule + AI)
-  → Calculates health score
-  → Applies improvements
-  → Retrains model
-  → Compares versions
-  → Selects best model
-  → Allows download
-  → Logs everything (MLflow + monitoring)
-```
 
-## 📁 Project Structure
+### 2.2 Services in Docker Compose
 
-```
+- backend (FastAPI, port 8000)
+- frontend (Nginx serving React build, port 3000)
+- mlflow (MLflow server, port 5000)
+
+Frontend calls backend via /api in Docker through Nginx reverse proxy.
+
+---
+
+## 3. Repository Structure
+
+```text
 MLOPS_Project/
-├── backend/                    # FastAPI backend
-│   ├── app/
-│   │   ├── main.py             # FastAPI entry point
-│   │   ├── config.py           # Settings & env vars
-│   │   ├── schemas.py          # Pydantic models
-│   │   └── routers/            # API endpoints
-│   │       ├── analyze.py      # POST /analyze
-│   │       ├── retrain.py      # POST /retrain
-│   │       ├── predict.py      # POST /predict
-│   │       └── download.py     # GET  /download_model
-│   ├── core/                   # Core ML logic
-│   │   ├── evaluator.py        # Metrics computation
-│   │   ├── diagnosis.py        # Problem detection
-│   │   ├── suggestions.py      # Rule + AI suggestions
-│   │   ├── health_score.py     # 0-100 health scoring
-│   │   ├── retrainer.py        # Auto-retraining engine
-│   │   └── monitor.py          # Logging & monitoring
-│   ├── services/               # Service layer
-│   │   ├── model_service.py    # Model save/load/registry
-│   │   ├── data_service.py     # Dataset loading & preprocessing
-│   │   ├── mlflow_service.py   # MLflow integration
-│   │   └── dvc_service.py      # DVC integration
-│   ├── requirements.txt
-│   └── Dockerfile
-│
-├── frontend/                   # React (Vite) frontend
-│   ├── src/
-│   │   ├── App.jsx
-│   │   ├── pages/              # Dashboard, Results, Compare, Monitor
-│   │   ├── components/         # Reusable UI components
-│   │   ├── api/client.js       # API client
-│   │   └── styles/index.css    # Design system
-│   ├── package.json
-│   └── Dockerfile
-│
-├── docker-compose.yml          # Backend + Frontend + MLflow
-├── .github/workflows/ci-cd.yml # CI/CD pipeline
-└── README.md
+|- backend/
+|  |- app/
+|  |  |- main.py                # FastAPI app, routers, CORS, health/root
+|  |  |- config.py              # env-based settings and path setup
+|  |  |- schemas.py             # Pydantic request/response schemas
+|  |  |- routers/
+|  |     |- analyze.py          # POST /analyze
+|  |     |- retrain.py          # POST /retrain
+|  |     |- predict.py          # POST /predict
+|  |     |- download.py         # GET /download_model, GET /models
+|  |- core/
+|  |  |- evaluator.py           # classification + regression metrics
+|  |  |- diagnosis.py           # rule-based issue detection
+|  |  |- suggestions.py         # suggestions + optional Gemini enhancement
+|  |  |- health_score.py        # weighted health scoring
+|  |  |- retrainer.py           # targeted retraining strategies
+|  |  |- monitor.py             # jsonl logs
+|  |- services/
+|  |  |- model_service.py       # model save/load/registry/versioning
+|  |  |- data_service.py        # CSV loading + preprocessing + split
+|  |  |- mlflow_service.py      # MLflow logging helpers
+|  |  |- dvc_service.py         # DVC CLI wrappers
+|  |- data/
+|  |- logs/
+|  |- mlruns/
+|  |- models/
+|  |- requirements.txt
+|  |- Dockerfile
+|- frontend/
+|  |- src/
+|  |  |- App.jsx
+|  |  |- api/client.js          # API base uses VITE_API_BASE_URL or /api
+|  |  |- pages/                 # Dashboard, Results, Compare, Monitor
+|  |  |- components/
+|  |- package.json
+|  |- Dockerfile
+|- docker-compose.yml
+|- README.md
 ```
 
-## 🚀 Quick Start
+---
 
-### Prerequisites
+## 4. Feature Coverage
 
-- **Python 3.11+**
-- **Node.js 18+**
-- **Git**
+### 4.1 Input modes
 
-### 1. Clone & Setup Backend
+- Mode A: model_file + dataset_file
+- Mode B: metrics_file + dataset_file
+
+Target column can be explicitly provided; if omitted, backend auto-detects using common target-name heuristics, then fallback to last column.
+
+### 4.2 Supported task types
+
+- Classification
+- Regression
+
+Task type is inferred from target column and model capabilities where possible.
+
+### 4.3 Diagnostics produced
+
+Examples:
+- Overfitting / Mild Overfitting
+- Underfitting / Low Accuracy
+- Class Imbalance / Severe Class Imbalance
+- High Missing Values
+- Low Variance Features
+- Possible Data Leakage
+- Feature Scaling Needed
+- Regression-specific low fit and high error diagnostics
+
+### 4.4 Retraining behavior
+
+- Loads an existing version from model registry
+- Tries targeted candidate pipelines/hyperparameters
+- Uses deterministic seeds (with retrain-round variation)
+- Avoids creating a new model version when there is no user-visible metric change
+
+### 4.5 Tracking and logs
+
+- MLflow run logging (metrics, params, model artifact)
+- JSONL operational logs:
+  - backend/logs/analyses.jsonl
+  - backend/logs/retraining.jsonl
+  - backend/logs/predictions.jsonl
+  - backend/logs/errors.jsonl
+
+---
+
+## 5. Requirements
+
+### 5.1 Local development
+
+- Python 3.11+
+- Node.js 20+ (recommended)
+- npm
+- Git
+
+Optional:
+- Docker Desktop
+- DVC CLI
+
+### 5.2 Python dependencies (backend)
+
+Defined in backend/requirements.txt:
+- FastAPI + Uvicorn
+- scikit-learn, pandas, numpy
+- MLflow
+- imbalanced-learn
+- python-dotenv
+- python-multipart
+- httpx
+
+---
+
+## 6. Environment Configuration
+
+Create backend/.env from backend/.env.example.
+
+Example keys:
+
+```env
+GEMINI_API_KEY=your_key_here
+GEMINI_MODEL=gemini-2.0-flash
+MLFLOW_EXPERIMENT_NAME=ModelDoctor
+FRONTEND_URL=http://localhost:5173
+APP_PORT=8000
+```
+
+Notes:
+- If GEMINI_API_KEY is missing or placeholder, app still works with rule-based suggestions/fallback summaries.
+- In Docker Compose, backend CORS frontend URL is set to http://localhost:3000.
+
+---
+
+## 7. Run Locally (Without Docker)
+
+### 7.1 Backend
 
 ```bash
 cd backend
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 2. Setup Frontend
+### 7.2 Frontend
 
 ```bash
 cd frontend
@@ -104,75 +206,300 @@ npm install
 npm run dev
 ```
 
-### 3. Open the App
+### 7.3 Local URLs
 
-- **Frontend:** http://localhost:5173
-- **Backend API:** http://localhost:8000
-- **API Docs:** http://localhost:8000/docs
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:8000
+- OpenAPI docs: http://localhost:8000/docs
 
-### Docker (Alternative)
+---
+
+## 8. Run With Docker Compose (Recommended)
+
+### 8.1 Build and start
 
 ```bash
-docker-compose up --build
+docker compose up --build -d
 ```
 
-- **Frontend:** http://localhost:3000
-- **Backend:** http://localhost:8000
-- **MLflow UI:** http://localhost:5000
+### 8.2 Check status
 
-## 🔌 API Endpoints
+```bash
+docker compose ps
+```
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/analyze` | Upload model/metrics + dataset for full analysis |
-| `POST` | `/retrain` | Retrain a model version with improvements |
-| `POST` | `/predict` | Make predictions with a saved model |
-| `GET`  | `/download_model` | Download a model as `.pkl` |
-| `GET`  | `/models` | List all model versions |
-| `GET`  | `/health` | API health check |
-| `GET`  | `/docs` | Swagger API documentation |
+### 8.3 View logs
 
-## 📊 Input Modes
+```bash
+docker compose logs -f backend
+docker compose logs -f frontend
+docker compose logs -f mlflow
+```
 
-### Mode A: Model + Dataset
-Upload a `.pkl` model file and `.csv` dataset. The system evaluates the model and computes all metrics.
+### 8.4 Stop services
 
-### Mode B: Metrics + Dataset
-Upload a `metrics.json` and `.csv` dataset. The system uses pre-computed metrics.
+```bash
+docker compose down
+```
 
-**metrics.json format:**
+### 8.5 Docker URLs
+
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+- Backend docs: http://localhost:8000/docs
+- MLflow UI: http://localhost:5000
+
+---
+
+## 9. Docker Desktop Usage (UI-first)
+
+Use this daily flow:
+
+1. Open Docker Desktop
+2. Go to Containers
+3. Start/Stop the compose app group (not individual image Run buttons)
+
+Important:
+- Start from compose containers to preserve project network, ports, and dependencies.
+- Avoid launching ad-hoc containers from Images tab for normal project operation.
+
+---
+
+## 10. API Reference
+
+Base URL:
+- Local backend: http://localhost:8000
+- In Docker frontend: proxied via /api
+
+### 10.1 POST /analyze
+
+Multipart form fields:
+- dataset_file (required): CSV
+- model_file (optional): .pkl/.joblib
+- metrics_file (optional): .json
+- target_column (optional): target label column
+
+At least one of model_file or metrics_file is required.
+
+Example:
+
+```bash
+curl -X POST "http://localhost:8000/analyze" \
+  -F "dataset_file=@data.csv" \
+  -F "model_file=@model.pkl" \
+  -F "target_column=target"
+```
+
+### 10.2 POST /retrain
+
+Multipart form fields:
+- dataset_file (required)
+- model_version (required, e.g. v1)
+- target_column (optional)
+
+Example:
+
+```bash
+curl -X POST "http://localhost:8000/retrain" \
+  -F "dataset_file=@data.csv" \
+  -F "model_version=v1"
+```
+
+### 10.3 POST /predict
+
+JSON body:
+
 ```json
 {
-  "accuracy": 0.85,
-  "precision": 0.83,
-  "recall": 0.87,
-  "f1_score": 0.85,
-  "train_accuracy": 0.95
+  "model_version": "v1",
+  "data": [
+    {"feature1": 1.2, "feature2": 0.4},
+    {"feature1": 0.7, "feature2": 2.1}
+  ]
 }
 ```
 
-## ⭐ Health Score
+model_version is optional; if missing, backend uses best model version.
 
-| Factor | Weight | Description |
-|--------|--------|-------------|
-| Accuracy | 30% | Model prediction accuracy |
-| Generalization | 25% | Train vs test accuracy gap |
-| Data Quality | 20% | Missing values, feature quality |
-| Class Balance | 15% | Target class distribution |
-| Stability | 10% | Cross-validation variance |
+### 10.4 GET /models
 
-## 🛠️ Tech Stack
+Returns model list from registry, each enriched with is_best against best version.
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React, Vite, Recharts, Framer Motion |
-| Backend | FastAPI, Python |
-| ML | Scikit-learn (Random Forest, Logistic Regression) |
-| Tracking | MLflow |
-| Data Versioning | DVC |
-| Containerization | Docker, Docker Compose |
-| CI/CD | GitHub Actions |
+### 10.5 GET /download_model
 
-## 📄 License
+Query params:
+- version (optional)
+
+If omitted, backend returns best model file.
+
+### 10.6 Utility endpoints
+
+- GET / basic status and endpoint list
+- GET /health health check
+
+---
+
+## 11. Metrics and Health Scoring
+
+### 11.1 Classification metrics
+
+- Accuracy, Precision, Recall, F1
+- Macro variants
+- Confusion matrix (bounded by class count threshold)
+- Error rate and misclassified count
+- Per-class breakdown
+
+### 11.2 Regression metrics
+
+- R2
+- MAE, MSE, RMSE
+- Explained variance
+
+### 11.3 Health score
+
+Classification factors:
+- Accuracy (30%)
+- Generalization gap (25%)
+- Data quality (20%)
+- Class balance (15%)
+- Stability/CV (10%)
+
+Regression factors:
+- Fit quality
+- Generalization
+- Data quality
+- Error quality
+- Stability
+
+Health status labels:
+- Excellent
+- Good
+- Needs Tuning
+- Poor
+
+---
+
+## 12. Model Versioning and Storage
+
+Models and metadata are persisted under backend volume mounts:
+
+- Model binaries: backend/models/model_vX.pkl
+- Registry: backend/models/_registry.json
+- MLflow artifacts and runs: backend/mlruns
+
+Version naming:
+- v1, v2, v3, ...
+
+Best model selection:
+- Highest health_score in registry.
+
+---
+
+## 13. DVC Integration Notes
+
+When analyzing, dataset file is saved to backend/data/raw and passed to DVC service.
+
+Behavior:
+- If DVC CLI is installed, backend attempts dvc add <dataset>.
+- If not installed, flow continues without failing core analysis.
+
+---
+
+## 14. Frontend Pages and Workflow
+
+Main routes:
+- / Dashboard upload form
+- /results analysis results and retrain action
+- /compare model version comparison with charts + download
+- /monitor trend and model history dashboard
+
+Frontend API behavior:
+- Uses VITE_API_BASE_URL if provided
+- Falls back to /api
+
+This supports both:
+- local Vite development (proxy in vite.config.js)
+- Docker Nginx reverse-proxy deployment
+
+---
+
+## 15. Troubleshooting
+
+### 15.1 Docker Desktop I/O error during build
+
+Symptoms:
+- input/output error during image pull/build
+- engine stops unexpectedly
+
+Likely cause:
+- insufficient disk space on Docker storage drive (often C drive)
+
+Fix:
+
+1. Free disk space (especially on current Docker storage drive)
+2. Docker Desktop -> Settings -> Resources -> Advanced
+3. Move Docker disk image location to a drive with space (for example D)
+4. Apply & restart Docker Desktop
+5. Retry:
+
+```bash
+docker compose up --build -d
+```
+
+### 15.2 Compose warning about version field
+
+If you see:
+- the attribute version is obsolete
+
+It is a harmless Compose warning with modern Docker Compose v2.
+
+### 15.3 Frontend cannot reach backend in Docker
+
+Ensure frontend API base is /api (already configured in frontend/src/api/client.js) and compose services are running.
+
+### 15.4 No models available for predict/download
+
+Run at least one successful /analyze call first to create a model version.
+
+---
+
+## 16. Security and Operational Notes
+
+- Do not commit real API keys in .env.
+- Validate uploaded files in production hardening phase.
+- Add authentication/authorization before public deployment.
+- Consider object storage for model/artifact persistence in production.
+
+---
+
+## 17. Suggested Next Improvements
+
+- Add unit and integration tests for routers/core modules
+- Add .dockerignore files to reduce image build context size
+- Add request size limits and file-type validation
+- Add async background job queue for long retraining tasks
+- Add CI checks (lint, tests, security scans)
+
+---
+
+## 18. Quick Command Reference
+
+```bash
+# Start stack
+docker compose up --build -d
+
+# Stop stack
+docker compose down
+
+# Check running services
+docker compose ps
+
+# Tail backend logs
+docker compose logs -f backend
+```
+
+---
+
+## 19. License
 
 MIT
