@@ -24,6 +24,7 @@ class MetricsOut(BaseModel):
     misclassified: Optional[int] = None
     total_test_samples: Optional[int] = None
     n_classes: Optional[int] = None
+    n_features: Optional[int] = None
     per_class: Optional[dict] = None
     # Regression metrics
     mae: Optional[float] = None

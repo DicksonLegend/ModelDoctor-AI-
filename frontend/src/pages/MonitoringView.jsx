@@ -28,6 +28,13 @@ export default function MonitoringView() {
 
   if (loading) return <Loader text="Loading monitoring data..." />;
 
+  const latestModel = [...models].sort((a, b) => {
+    const vA = parseInt(a.version?.replace('v', '')) || 0;
+    const vB = parseInt(b.version?.replace('v', '')) || 0;
+    return vB - vA;
+  })[0] || {};
+  const isRegression = latestModel.task_type === 'regression' || latestModel.r2_score != null;
+
   // Trend data — model versions over time
   const trendData = [...models]
     .sort((a, b) => {
@@ -38,6 +45,7 @@ export default function MonitoringView() {
     .map(m => ({
       version: m.version,
       Accuracy: +(m.accuracy * 100).toFixed(1),
+      R2: +((m.r2_score ?? m.accuracy ?? 0) * 100).toFixed(1),
       Health: m.health_score,
       F1: +(m.f1_score * 100).toFixed(1),
     }));
@@ -50,7 +58,7 @@ export default function MonitoringView() {
         animate={{ opacity: 1, y: 0 }}
       >
         <h1>📡 Monitoring Dashboard</h1>
-        <p>Track model performance across versions and over time.</p>
+        <p>Track model performance across versions and over time ({isRegression ? 'Regression' : 'Classification'}).</p>
       </motion.div>
 
       {/* Summary Cards */}
@@ -73,10 +81,10 @@ export default function MonitoringView() {
         >
           <div className="metric-value" style={{ fontSize: '2rem' }}>
             {models.length > 0
-              ? `${(Math.max(...models.map(m => m.accuracy)) * 100).toFixed(1)}%`
+              ? `${(Math.max(...models.map(m => (isRegression ? (m.r2_score ?? m.accuracy ?? 0) : (m.accuracy ?? 0))) ) * 100).toFixed(1)}%`
               : '—'}
           </div>
-          <div className="metric-label">Best Accuracy</div>
+          <div className="metric-label">{isRegression ? 'Best R2' : 'Best Accuracy'}</div>
         </motion.div>
 
         <motion.div
@@ -103,7 +111,7 @@ export default function MonitoringView() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
         >
-          <h3 style={{ marginBottom: 'var(--space-lg)' }}>📈 Performance Trend</h3>
+          <h3 style={{ marginBottom: 'var(--space-lg)' }}>{isRegression ? '📈 Regression Trend' : '📈 Performance Trend'}</h3>
           <ResponsiveContainer width="100%" height={350}>
             <LineChart data={trendData}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
@@ -118,14 +126,23 @@ export default function MonitoringView() {
                 }}
               />
               <Legend />
-              <Line
-                type="monotone" dataKey="Accuracy" stroke="#8b5cf6"
-                strokeWidth={2} dot={{ r: 5 }} activeDot={{ r: 7 }}
-              />
-              <Line
-                type="monotone" dataKey="F1" stroke="#06b6d4"
-                strokeWidth={2} dot={{ r: 5 }} activeDot={{ r: 7 }}
-              />
+              {isRegression ? (
+                <Line
+                  type="monotone" dataKey="R2" stroke="#8b5cf6"
+                  strokeWidth={2} dot={{ r: 5 }} activeDot={{ r: 7 }}
+                />
+              ) : (
+                <>
+                  <Line
+                    type="monotone" dataKey="Accuracy" stroke="#8b5cf6"
+                    strokeWidth={2} dot={{ r: 5 }} activeDot={{ r: 7 }}
+                  />
+                  <Line
+                    type="monotone" dataKey="F1" stroke="#06b6d4"
+                    strokeWidth={2} dot={{ r: 5 }} activeDot={{ r: 7 }}
+                  />
+                </>
+              )}
               <Line
                 type="monotone" dataKey="Health" stroke="#10b981"
                 strokeWidth={2} dot={{ r: 5 }} activeDot={{ r: 7 }}
@@ -169,7 +186,7 @@ export default function MonitoringView() {
                 {m.is_best && <span className="best-badge">🏆 Best</span>}
               </div>
               <div style={{ display: 'flex', gap: 'var(--space-xl)', color: 'var(--text-secondary)' }}>
-                <span>Acc: <strong style={{ color: 'var(--text-primary)' }}>{(m.accuracy * 100).toFixed(1)}%</strong></span>
+                <span>{isRegression ? 'R2' : 'Acc'}: <strong style={{ color: 'var(--text-primary)' }}>{((isRegression ? (m.r2_score ?? m.accuracy ?? 0) : (m.accuracy ?? 0)) * 100).toFixed(1)}%</strong></span>
                 <span>Health: <strong style={{
                   color: m.health_score >= 70 ? 'var(--accent-green)' : 'var(--accent-orange)',
                 }}>{m.health_score}</strong></span>

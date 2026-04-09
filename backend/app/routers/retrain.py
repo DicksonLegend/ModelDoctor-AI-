@@ -126,6 +126,11 @@ async def retrain(
                 model, X_train, y_train, X_test, y_test, diagnosis_results, retrain_round
             )
 
+        applied_actions.insert(0, f"Loaded base model version {model_version} from registry for retraining")
+
+        old_metrics["n_features"] = len(feature_names)
+        new_metrics["n_features"] = len(feature_names)
+
         # Detect whether the new model behavior is actually different
         try:
             old_pred = model.predict(X_test)
@@ -145,16 +150,20 @@ async def retrain(
         # Generate new diagnosis/suggestions for user-facing explanation
         new_diagnosis = diagnose(new_metrics, processed_df, target_column, task_type=task_type)
         new_suggestions = get_rule_suggestions(new_diagnosis)
-        new_suggestions = await enhance_with_ai(new_diagnosis, new_suggestions)
+        # Keep retrain responsive: skip external AI call and use deterministic suggestions.
+        new_suggestions = await enhance_with_ai(new_diagnosis, new_suggestions, use_ai=False)
 
-        class_dist = df[target_column].value_counts().to_dict()
-        class_dist = {str(k): int(v) for k, v in class_dist.items()}
+        class_dist = {}
+        if task_type == "classification":
+            class_dist = df[target_column].value_counts().to_dict()
+            class_dist = {str(k): int(v) for k, v in class_dist.items()}
         plain_language_summary = await build_plain_language_summary(
             metrics=new_metrics,
             diagnosis=new_diagnosis,
             suggestions=new_suggestions,
             health=new_health,
             class_distribution=class_dist,
+            use_ai=False,
         )
 
         # ── Calculate improvements ───────────────────────────────────
@@ -192,7 +201,7 @@ async def retrain(
 
         if meaningful_change:
             new_version = get_next_version()
-            save_model(new_model, new_version, new_metrics, new_health["score"])
+            save_model(new_model, new_version, new_metrics, new_health["score"], task_type=task_type)
         else:
             new_version = model_version
             applied_actions.append(

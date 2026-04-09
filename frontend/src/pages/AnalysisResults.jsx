@@ -231,7 +231,7 @@ export default function AnalysisResults({ result, datasetFile, setAnalysisResult
                   Dataset Info
                 </h4>
                 <MetricRow label="Test Samples" value={val(metrics.total_test_samples)} />
-                <MetricRow label="Features" value={val(metrics.n_classes)} />
+                <MetricRow label="Features" value={val(metrics.n_features)} />
               </div>
             </>
           ) : (
@@ -339,6 +339,11 @@ export default function AnalysisResults({ result, datasetFile, setAnalysisResult
               const newVal = retrainResult.new_metrics[key] || 0;
               const oldVal = retrainResult.old_metrics[key] || 0;
               const delta = newVal - oldVal;
+              const betterIfHigher = !isRegression || key === 'r2_score';
+              const isPositive = betterIfHigher ? delta >= 0 : delta <= 0;
+              const deltaLabel = isRegression
+                ? `${delta >= 0 ? '+' : ''}${Number(delta).toFixed(4)}`
+                : `${(Math.abs(delta) * 100).toFixed(1)}%`;
               return (
                 <div key={key} style={{ textAlign: 'center' }}>
                   <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
@@ -347,8 +352,8 @@ export default function AnalysisResults({ result, datasetFile, setAnalysisResult
                   <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>
                     {isRegression ? Number(newVal).toFixed(4) : `${(newVal * 100).toFixed(1)}%`}
                   </div>
-                  <div className={delta >= 0 ? 'improvement-positive' : 'improvement-negative'}>
-                    {delta >= 0 ? '▲' : '▼'} {(Math.abs(delta) * 100).toFixed(1)}%
+                  <div className={isPositive ? 'improvement-positive' : 'improvement-negative'}>
+                    {isPositive ? '▲' : '▼'} {deltaLabel}
                   </div>
                 </div>
               );

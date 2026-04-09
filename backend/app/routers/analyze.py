@@ -229,6 +229,8 @@ async def analyze(
             f.write(dataset_bytes)
         version_dataset(dataset_path)
 
+        metrics["n_features"] = len(feature_names)
+
         # ── Diagnose ─────────────────────────────────────────────────
         diagnosis_results = diagnose(metrics, processed_df, target_column, task_type=task_type)
 
@@ -263,7 +265,7 @@ async def analyze(
         # ── Save model & register version ────────────────────────────
         version = get_next_version()
         if model is not None:
-            save_model(model, version, metrics, health["score"])
+            save_model(model, version, metrics, health["score"], task_type=task_type)
 
         # ── MLflow logging ───────────────────────────────────────────
         try:

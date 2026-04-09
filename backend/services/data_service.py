@@ -126,7 +126,7 @@ def preprocess(
         X_df[col] = pd.to_numeric(X_df[col], errors="coerce").fillna(0)
 
     feature_names = X_df.columns.tolist()
-    X = X_df.values.astype(np.float64)
+    X = X_df.astype(np.float64)
     y = y_series.values
 
     if task_type == "classification":

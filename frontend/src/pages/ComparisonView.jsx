@@ -33,6 +33,13 @@ export default function ComparisonView() {
 
   if (loading) return <Loader text="Loading model versions..." />;
 
+  const latestModel = [...models].sort((a, b) => {
+    const vA = parseInt(a.version?.replace('v', '')) || 0;
+    const vB = parseInt(b.version?.replace('v', '')) || 0;
+    return vB - vA;
+  })[0] || {};
+  const isRegression = latestModel.task_type === 'regression' || latestModel.r2_score != null;
+
   // Prepare chart data
   const barData = models.map(m => ({
     version: m.version,
@@ -40,6 +47,9 @@ export default function ComparisonView() {
     Precision: +(m.precision * 100).toFixed(1),
     Recall: +(m.recall * 100).toFixed(1),
     F1: +(m.f1_score * 100).toFixed(1),
+    R2: +((m.r2_score ?? 0) * 100).toFixed(1),
+    EV: +((m.explained_variance ?? 0) * 100).toFixed(1),
+    RMSE: +(m.rmse ?? 0).toFixed(2),
     Health: m.health_score,
   }));
 
@@ -50,10 +60,12 @@ export default function ComparisonView() {
     return vB - vA;
   }).slice(0, 2);
 
-  const radarData = ['accuracy', 'precision', 'recall', 'f1_score'].map(key => {
+  const radarKeys = isRegression ? ['r2_score', 'explained_variance'] : ['accuracy', 'precision', 'recall', 'f1_score'];
+  const radarData = radarKeys.map(key => {
     const item = { metric: key.replace('_', ' ').toUpperCase() };
     latestModels.forEach((m, i) => {
-      item[m.version] = +(m[key] * 100).toFixed(1);
+      const raw = m[key] ?? 0;
+      item[m.version] = +(raw * 100).toFixed(1);
     });
     return item;
   });
@@ -67,7 +79,7 @@ export default function ComparisonView() {
       >
         <h1>📊 Model Comparison</h1>
         <p>
-          Compare all model versions side by side.
+          Compare all model versions side by side ({isRegression ? 'Regression' : 'Classification'}).
           {bestVersion && (
             <> Best model: <strong style={{ color: 'var(--accent-green)' }}>{bestVersion}</strong></>
           )}
@@ -134,7 +146,7 @@ export default function ComparisonView() {
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.2 }}
           >
-            <h3 style={{ marginBottom: 'var(--space-lg)' }}>📈 Performance Overview</h3>
+            <h3 style={{ marginBottom: 'var(--space-lg)' }}>{isRegression ? '📈 Regression Overview' : '📈 Performance Overview'}</h3>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={barData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
@@ -149,8 +161,17 @@ export default function ComparisonView() {
                   }}
                 />
                 <Legend />
-                <Bar dataKey="Accuracy" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="F1" fill="#06b6d4" radius={[4, 4, 0, 0]} />
+                {isRegression ? (
+                  <>
+                    <Bar dataKey="R2" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="EV" fill="#06b6d4" radius={[4, 4, 0, 0]} />
+                  </>
+                ) : (
+                  <>
+                    <Bar dataKey="Accuracy" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="F1" fill="#06b6d4" radius={[4, 4, 0, 0]} />
+                  </>
+                )}
                 <Bar dataKey="Health" fill="#10b981" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>

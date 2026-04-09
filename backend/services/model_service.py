@@ -8,6 +8,7 @@ import json
 import joblib
 from datetime import datetime, timezone
 from pathlib import Path
+from sklearn.base import is_classifier, is_regressor
 
 from app.config import MODELS_DIR
 
@@ -43,7 +44,7 @@ def load_model_from_file(file_bytes: bytes):
         return pickle.load(buf)
 
 
-def save_model(model, version: str, metrics: dict, health_score: int):
+def save_model(model, version: str, metrics: dict, health_score: int, task_type: str = "classification"):
     """Save model to disk and register metadata."""
     path = MODELS_DIR / f"model_{version}.pkl"
     joblib.dump(model, path)
@@ -51,10 +52,15 @@ def save_model(model, version: str, metrics: dict, health_score: int):
     _registry[version] = {
         "version": version,
         "path": str(path),
+        "task_type": task_type,
         "accuracy": metrics.get("accuracy", 0),
         "precision": metrics.get("precision", 0),
         "recall": metrics.get("recall", 0),
         "f1_score": metrics.get("f1_score", 0),
+        "r2_score": metrics.get("r2_score"),
+        "rmse": metrics.get("rmse"),
+        "mae": metrics.get("mae"),
+        "explained_variance": metrics.get("explained_variance"),
         "health_score": health_score,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -89,7 +95,66 @@ def get_model_path(version: str) -> Path:
 
 def list_models() -> list[dict]:
     """Return all registered model versions with metadata."""
-    return list(_registry.values())
+    changed = False
+    models = []
+
+    for version, meta in _registry.items():
+        m = dict(meta)
+        inferred_task = _infer_task_type_from_model_path(m.get("path", ""))
+        task_type = m.get("task_type")
+
+        # Correct stale task_type values from legacy runs.
+        if not task_type or task_type != inferred_task:
+            task_type = inferred_task
+            m["task_type"] = task_type
+            changed = True
+
+        if task_type == "regression":
+            # Backfill legacy regression entries that were saved before
+            # regression-specific fields were added to registry.
+            if m.get("r2_score") is None:
+                m["r2_score"] = m.get("accuracy", 0.0)
+                changed = True
+            if m.get("explained_variance") is None:
+                m["explained_variance"] = m.get("precision", m.get("r2_score", 0.0))
+                changed = True
+
+        if m != meta:
+            _registry[version] = m
+
+        models.append(m)
+
+    if changed:
+        _save_registry()
+
+    return models
+
+
+def _infer_task_type_from_model_path(path_str: str) -> str:
+    """Infer task type by loading saved sklearn model/pipeline."""
+    try:
+        path = Path(path_str)
+        if not path.exists():
+            return "classification"
+
+        model = joblib.load(path)
+        est = model
+        if hasattr(model, "named_steps"):
+            if "clf" in model.named_steps:
+                est = model.named_steps["clf"]
+            elif "reg" in model.named_steps:
+                est = model.named_steps["reg"]
+            elif hasattr(model, "steps") and model.steps:
+                est = model.steps[-1][1]
+
+        if is_regressor(est):
+            return "regression"
+        if is_classifier(est):
+            return "classification"
+    except Exception:
+        pass
+
+    return "classification"
 
 
 def get_next_version() -> str:

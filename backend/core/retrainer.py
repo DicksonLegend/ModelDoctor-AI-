@@ -282,14 +282,35 @@ def retrain_regression_model(
     baseline_metrics = evaluate_regression_model(model, X_train, y_train, X_test, y_test)
     baseline_r2 = float(baseline_metrics.get("r2_score", -1.0) or -1.0)
 
+    n_train = len(X_train)
+    large_mode = n_train > 120000
+    tuning_rows = 60000 if large_mode else min(100000, n_train)
+
+    if tuning_rows < n_train:
+        idx = rng.choice(n_train, size=tuning_rows, replace=False)
+        X_tune = _take_rows(X_train, idx)
+        y_tune = _take_rows(y_train, idx)
+        applied_actions.append(
+            f"Used {tuning_rows} sampled rows for tuning (from {n_train}) to keep retraining responsive"
+        )
+    else:
+        X_tune = X_train
+        y_tune = y_train
+
     candidates = []
-    for idx in range(12):
+    rf_trials = 6 if large_mode else 10
+    gbr_trials = 3 if large_mode else 5
+    ridge_trials = 2 if large_mode else 4
+
+    rf_n_low, rf_n_high = (80, 260) if large_mode else (150, 700)
+
+    for idx in range(rf_trials):
         candidates.append((
             f"RFReg-{idx+1}",
             Pipeline([
                 ("scaler", StandardScaler()),
                 ("reg", RandomForestRegressor(
-                    n_estimators=int(rng.integers(150, 700)),
+                    n_estimators=int(rng.integers(rf_n_low, rf_n_high)),
                     max_depth=rng.choice([None, 8, 12, 18, 24]),
                     min_samples_split=int(rng.integers(2, 10)),
                     min_samples_leaf=int(rng.integers(1, 5)),
@@ -298,13 +319,13 @@ def retrain_regression_model(
             ]),
         ))
 
-    for idx in range(6):
+    for idx in range(gbr_trials):
         candidates.append((
             f"GBR-{idx+1}",
             Pipeline([
                 ("scaler", StandardScaler()),
                 ("reg", GradientBoostingRegressor(
-                    n_estimators=int(rng.integers(120, 420)),
+                    n_estimators=int(rng.integers(80, 260 if large_mode else 420)),
                     learning_rate=float(np.round(rng.uniform(0.02, 0.2), 4)),
                     max_depth=int(rng.integers(2, 6)),
                     random_state=2000 + idx + retrain_round,
@@ -312,7 +333,7 @@ def retrain_regression_model(
             ]),
         ))
 
-    for idx in range(4):
+    for idx in range(ridge_trials):
         candidates.append((
             f"Ridge-{idx+1}",
             Pipeline([
@@ -327,13 +348,13 @@ def retrain_regression_model(
 
     for _, pipe in candidates:
         try:
-            pipe.fit(X_train, y_train)
-            cand_metrics = evaluate_regression_model(pipe, X_train, y_train, X_test, y_test)
-            cand_r2 = float(cand_metrics.get("r2_score", -1.0) or -1.0)
+            pipe.fit(X_tune, y_tune)
+            # Fast candidate scoring: evaluate only R2 on holdout.
+            cand_r2 = float(pipe.score(X_test, y_test))
             if cand_r2 > best_r2 + 1e-6:
                 best_r2 = cand_r2
                 best_pipe = pipe
-                best_metrics = cand_metrics
+                best_metrics = None
         except Exception:
             continue
 
@@ -366,9 +387,21 @@ def retrain_regression_model(
     else:
         applied_actions.append("Model may already be near-optimal for this regression dataset")
 
+    # Full metrics only once for the selected model.
+    best_metrics = evaluate_regression_model(best_pipe, X_train, y_train, X_test, y_test)
+
     try:
-        cv = KFold(n_splits=3, shuffle=True, random_state=42)
-        cv_scores = cross_val_score(best_pipe, X_train, y_train, cv=cv, scoring="r2").tolist()
+        cv_splits = 2 if large_mode else 3
+        cv = KFold(n_splits=cv_splits, shuffle=True, random_state=42)
+        cv_X = X_tune if len(X_tune) < len(X_train) else X_train
+        cv_y = y_tune if len(y_tune) < len(y_train) else y_train
+
+        if len(cv_X) > 30000:
+            cv_idx = rng.choice(len(cv_X), size=30000, replace=False)
+            cv_X = _take_rows(cv_X, cv_idx)
+            cv_y = _take_rows(cv_y, cv_idx)
+
+        cv_scores = cross_val_score(best_pipe, cv_X, cv_y, cv=cv, scoring="r2").tolist()
     except Exception:
         cv_scores = []
 
@@ -380,6 +413,13 @@ def _safe_score(model, X_test, y_test) -> float:
         return float(model.score(X_test, y_test))
     except Exception:
         return 0.0
+
+
+def _take_rows(data, idx):
+    """Take row subset from ndarray/DataFrame/Series safely."""
+    if hasattr(data, "iloc"):
+        return data.iloc[idx]
+    return data[idx]
 
 
 def _quality_score(acc: float, macro_f1: float, cv_mean: float, cv_std: float) -> float:
